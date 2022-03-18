@@ -1,0 +1,364 @@
+---
+title: "Impact of COVID-19 on Worldwide Aviation"
+author: "Hao Jin"
+date: \today
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: show
+    df_print: paged
+    highlight: haddock
+    theme: readable
+    tidy: yes
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+subtitle: "Section II - The Impact of COVID-19"
+---
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(echo    = TRUE,
+                      warning = FALSE,
+                      message = FALSE,
+                      comment = "")
+```
+
+```{r, echo=FALSE, results=FALSE}
+library(forecast)       
+library(zoo)           
+library(xts)            
+library(fpp2)          
+library(tis)            
+library(tseries)        
+library(lubridate)      
+library(vars)           # VAR
+library(urca)           
+library(AER)            
+library(tidyverse)
+library(fabletools)
+library(tsibble)
+data <- read_csv("flights.csv")
+passengers <- read_csv("passengers.csv")
+revenue<- read_csv("RPM.csv")
+US_daily_covid_cum <- read_csv("US_cumulative.csv")
+UK_daily_covid_cum <- read_csv("UK_cases.csv")
+# confirmed_US_cum <- read_csv("US_cumulative.csv")
+# confirmed_GLOBAL_raw <- read_csv("time_series_covid19_confirmed_global.csv")
+# https://blog.revolutionanalytics.com/2012/09/how-to-use-your-favorite-fonts-in-r-charts.html
+```
+
+\newpage
+
+# Daily Number of Flights Worldwide
+
+```{r, echo=FALSE}
+US <- data %>% filter(country == "United States of America") %>% select(day, total_flights)
+US$day <- as.Date(US$day)
+US_xts <- xts(US$total_flights, US$day)
+plot(US_xts, main = "Daily Number of Flights - US")
+events <- xts(c("Covid", "Delta", "Omicron"), 
+              as.Date(c("2020-03-11", "2021-06-01", "2021-11-26")))
+# tiff("us_xts.tiff", units="in", width=6, height=4, res=300)
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+# dev.off()
+```
+
+```{r, echo=FALSE}
+# unique(data$country)
+UK <- data %>% filter(country == "United Kingdom") %>% select(day, total_flights)
+UK$day <- as.Date(UK$day)
+UK_xts <- xts(UK$total_flights, UK$day)
+plot(UK_xts, main = "Daily Number of Flights - UK")
+# tiff("uk_xts.tiff", units="in", width=6, height=4, res=300)
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+# dev.off()
+```
+
+```{r, echo=FALSE}
+AU <- data %>% filter(country == "Australia") %>% select(day, total_flights)
+AU$day <- as.Date(AU$day)
+AU_xts <- xts(AU$total_flights, AU$day)
+plot(AU_xts, main = "Daily Number of Flights - Australia")
+# tiff("au_xts.tiff", units="in", width=6, height=4, res=300)
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+# dev.off()
+```
+
+```{r, echo=FALSE}
+IN <- data %>% filter(country == "India") %>% select(day, total_flights)
+IN$day <- as.Date(IN$day)
+IN_xts <- xts(IN$total_flights, IN$day)
+plot(IN_xts, main = "Daily Number of Flights - India", ylim = c(0, 1600))
+indian_events <- xts("India's \n deadly \n second \n wave", as.Date("2021-03-01"))
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+# tiff("in_xts.tiff", units="in", width=6, height=4, res=300)
+addEventLines(indian_events, main = "", on = 0, lty = 2, lwd = 2, col = 5, pos = 1, cex = 1.2, offset = 2.3)
+# dev.off()
+```
+
+```{r, echo=FALSE}
+BR <- data %>% filter(country == "Brazil") %>% select(day, total_flights)
+BR$day <- as.Date(BR$day)
+BR_xts <- xts(BR$total_flights, BR$day)
+plot(BR_xts, main = "Daily Number of Flights - Brazil")
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+```
+
+```{r, echo=FALSE}
+QA <- data %>% filter(country == "Qatar") %>% select(day, total_flights)
+QA$day <- as.Date(QA$day)
+QA_xts <- xts(QA$total_flights, QA$day)
+plot(QA_xts, main = "Daily Number of Flights - Qatar")
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+```
+
+```{r, echo=FALSE}
+ZM <- data %>% filter(country == "Zambia") %>% select(day, total_flights)
+ZM$day <- as.Date(ZM$day)
+ZM_xts <- xts(ZM$total_flights, ZM$day)
+plot(ZM_xts, main = "Daily Number of Flights - Zambia")
+addEventLines(events, main = "", on = 0, lty = 2, lwd = 2, col = c(2,3,4), pos = 1, cex = 1.2, offset = 0.2)
+```
+
+
+
+
+
+\newpage
+
+# Change Point Detection
+
+```{r}
+# Daily number of flights in the US (total: domestic + international), create xts object 
+US_daily_total <- data %>% 
+  filter(country == "United States of America") %>% 
+  select(day, total_flights)
+
+US_daily_total$day <- as.Date(US_daily_total$day)
+US_daily_total_xts <- xts(US_daily_total$total_flights, US_daily_total$day)
+```
+
+```{r}
+# Daily number of flights in the US (total: domestic + international), create ts object 
+US_daily_total <- data %>% 
+  filter(country == "United States of America") %>% 
+  select(day, total_flights)
+
+US_daily_total_ts <- ts(US_daily_total$total_flights, start = c(2019, 1), frequency = 365)
+```
+
+```{r}
+US_weekly_total_xts <- apply.weekly(US_daily_total_xts, sum)
+US_weekly_total_ts <- ts(US_weekly_total_xts, start = c(2019,1), frequency = 52)
+```
+
+```{r}
+library("tsoutliers")
+US_weekly_total_ts_no_time <- ts(as.vector(US_weekly_total_ts), frequency = 1)
+US_weekly_total_ts_no_time_outliers <- tso(US_weekly_total_ts_no_time)
+# tiff("change_detection.tiff", units="in", width=6, height=4, res=300)
+plot(US_weekly_total_ts_no_time_outliers)
+# dev.off()
+US_weekly_total_ts_no_time_outliers
+```
+
+Additive Outlier (AO)
+Innovation Outlier (IO)
+Level Shift (LS)
+Temporary change (TC)
+Seasonal Level Shift (SLS)
+
+```{r}
+# library(xtable)
+# xtable(US_weekly_total_ts_no_time_outliers$outliers)
+```
+
+```{r}
+library("strucchange")
+breakpoints(US_weekly_total_ts_no_time~1)
+```
+
+
+
+
+
+\newpage
+
+# Number of Passengers in the US Airports
+
+```{r}
+passengers <- passengers %>% filter(Month != "TOTAL")
+passengers <- as.data.frame(passengers)
+
+passengers_total_ts <- ts(passengers$TOTAL, start = c(2002, 10), frequency = 12)
+
+passengers_bf2020 <- passengers %>% filter(Year < 2020)
+passengers_bf2020_total_ts <- ts(passengers_bf2020$TOTAL, start = c(2002, 10), frequency = 12)
+passengers_bf2020_domestic_ts <- ts(passengers_bf2020$DOMESTIC, start = c(2002, 10), frequency = 12)
+passengers_bf2020_intl_ts <- ts(passengers_bf2020$INTERNATIONAL, start = c(2002, 10), frequency = 12)
+
+passengers_sc2020 <- passengers %>% filter(Year >= 2020)
+passengers_sc2020_total_ts <- ts(passengers_sc2020$TOTAL, start = c(2020, 1), frequency = 12)
+passengers_sc2020_domestic_ts <- ts(passengers_sc2020$DOMESTIC, start = c(2020, 1), frequency = 12)
+passengers_sc2020_intl_ts <- ts(passengers_sc2020$INTERNATIONAL, start = c(2020, 1), frequency = 12)
+```
+
+```{r}
+# ARIMA
+# Total
+arima_passengers_bf2020_total <- auto.arima(passengers_bf2020_total_ts)
+arima_passengers_bf2020_total_forecast <- forecast(arima_passengers_bf2020_total, h = 24)
+
+# Domestic
+arima_passengers_bf2020_domestic <- auto.arima(passengers_bf2020_domestic_ts)
+arima_passengers_bf2020_domestic_forecast <- forecast(arima_passengers_bf2020_domestic, h = 24)
+
+# International
+arima_passengers_bf2020_intl <- auto.arima(passengers_bf2020_intl_ts)
+arima_passengers_bf2020_intl_forecast <- forecast(arima_passengers_bf2020_intl, h = 24)
+```
+
+```{r}
+# png(file="passenger_total.png", width=1000, height=600)
+library(gridExtra)
+total_plot <- arima_passengers_bf2020_total_forecast %>%
+  autoplot() + 
+  autolayer(passengers_sc2020_total_ts, series = "Actual") + 
+  autolayer(arima_passengers_bf2020_total_forecast, series = "Forecasts", shadecols = "oldstyle") + 
+  geom_vline(xintercept = 2020, linetype = "dotted", color = "purple", size = 1) + 
+  ylab("Monthly Passengers") + 
+  ggtitle("Number of Passengers in the U.S. Airports - Total") +
+  theme(text = element_text(size = 20)) 
+
+domestic_plot <- arima_passengers_bf2020_domestic_forecast %>%
+  autoplot() + 
+  autolayer(passengers_sc2020_domestic_ts, series = "Actual") + 
+  autolayer(arima_passengers_bf2020_domestic_forecast, series = "Forecasts", shadecols = "oldstyle") + 
+  geom_vline(xintercept = 2020, linetype = "dotted", color = "purple", size = 1) + 
+  ylab("Monthly Passengers") + 
+  ggtitle("Number of Passengers in the U.S. Airports - Domestic Only") +
+  theme(text = element_text(size = 20)) 
+
+intl_plot <- arima_passengers_bf2020_intl_forecast %>%
+  autoplot() +  
+  autolayer(passengers_sc2020_intl_ts, series = "Actual") + 
+  autolayer(arima_passengers_bf2020_intl_forecast, series = "Forecasts", shadecols = "oldstyle") + 
+  geom_vline(xintercept = 2020, linetype = "dotted", color = "purple", size = 1) + 
+  ylab("Monthly Passengers") + 
+  ggtitle("Number of Passengers in the U.S. Airports - International Only") +
+  theme(text = element_text(size = 20)) 
+
+# png(file="passenger_domestic_intl.png", width=1000, height=900)
+grid.arrange(total_plot, domestic_plot, intl_plot, nrow = 3)
+# dev.off()
+```
+
+```{r}
+ggplot(revenue, aes(DATE, RPM)) + geom_line()
+
+rev_bf2020 <- revenue %>% filter(DATE < as.Date("2020-01-01"))
+rev_bf2020_total_ts <- ts(rev_bf2020$RPM, start = c(2000, 2), frequency = 12)
+
+rev_sc2020 <- revenue %>% filter(DATE >= as.Date("2020-01-01"))
+rev_sc2020_total_ts <- ts(rev_sc2020$RPM, start = c(2020, 1), frequency = 12)
+
+
+arima_rev_bf2020 <- auto.arima(rev_bf2020_total_ts)
+arima_rev_bf2020_total_forecast <- forecast(arima_rev_bf2020, h = 22)
+
+# png(file="revenue.png", width=1000, height=300)
+arima_rev_bf2020_total_forecast %>%
+  autoplot() + 
+  autolayer(rev_sc2020_total_ts, series = "Actual") + 
+  autolayer(arima_rev_bf2020_total_forecast, series = "Forecasts", shadecols = "oldstyle") + 
+  geom_vline(xintercept = 2020, linetype = "dotted", color = "purple", size = 1) + 
+  ylab("Revenue Passenger Miles") + 
+  ggtitle("Revenue Passenger Miles in the US") +
+  theme(text = element_text(size = 20)) 
+# dev.off()
+```
+
+
+
+
+
+\newpage
+
+# Number of Flights in the vs. Confirmed Cases
+
+```{r}
+US_daily_covid_cum_ts <- ts(US_daily_covid_cum$each_day_US)
+US_daily_covid_ts <- ts(US_daily_covid_cum_ts - stats::lag(US_daily_covid_cum_ts, -1), start = c(2020,23), frequency = 365)
+# plot(US_daily_covid_ts)
+
+# xts object
+US_daily_covid_date <- as.Date(US_daily_covid_cum$X1[-1], format = "%m/%d/%y")
+US_daily_covid_ts_xts <- xts(as.vector(US_daily_covid_ts), US_daily_covid_date)
+```
+
+```{r}
+US_weekly_covid_xts <- apply.weekly(US_daily_covid_ts_xts, sum)
+
+US_weekly_total_xts_normal <- (US_weekly_total_xts - mean(US_weekly_total_xts)) / sd(US_weekly_total_xts)
+US_weekly_covid_xts_normal <- (US_weekly_covid_xts - mean(US_weekly_covid_xts)) / sd(US_weekly_covid_xts)
+```
+
+```{r}
+US_weekly_total_ts_normal <- ts(US_weekly_total_xts_normal, start = c(2019,1), frequency = 52)
+US_weekly_covid_ts_normal <- ts(US_weekly_covid_xts_normal, start = c(2020,4), frequency = 52)
+```
+
+```{r}
+df <- cbind(US_weekly_total_ts_normal, US_weekly_covid_ts_normal)
+df <- tseries::na.remove(df)
+
+# png(file="us_flights_cases.png", width=1000, height=600)
+us_flights_cases <- autoplot(df) +
+  ylab("Z-Score") +
+  ggtitle("Normalized Weekly Number of Flights and Confirmed Cases in the US") + 
+  scale_x_continuous(breaks = seq(2020, 2022, by = 1)) + 
+  scale_colour_discrete(labels = c("Flights", "Cases")) +
+  theme(text = element_text(size = 20))
+# dev.off()
+
+# Daily number of flights in the UK (total: domestic + international), create xts object 
+UK_daily_total <- data %>% 
+  filter(country == "United Kingdom") %>% 
+  select(day, total_flights)
+
+UK_daily_total$day <- as.Date(UK_daily_total$day)
+UK_daily_total_xts <- xts(UK_daily_total$total_flights, UK_daily_total$day)
+UK_weekly_total_xts <- apply.weekly(UK_daily_total_xts, sum, na.rm=TRUE)
+
+UK_weekly_total_ts <- ts(UK_weekly_total_xts, start = c(2019,1), frequency = 52)
+
+UK_daily_covid_cum_ts <- ts(UK_daily_covid_cum$`United Kingdom`)
+UK_daily_covid_ts <- ts(UK_daily_covid_cum_ts - stats::lag(UK_daily_covid_cum_ts, -1)
+                        ,start = c(2020,23), frequency = 365)
+# plot(US_daily_covid_ts)
+
+# xts object
+UK_daily_covid_date <- as.Date(UK_daily_covid_cum$day[-1], format = "%m/%d/%y")
+UK_daily_covid_ts_xts <- xts(as.vector(UK_daily_covid_ts), UK_daily_covid_date)
+
+UK_weekly_covid_xts <- apply.weekly(UK_daily_covid_ts_xts, sum)
+UK_weekly_total_xts_normal <- (UK_weekly_total_xts - mean(UK_weekly_total_xts)) / sd(UK_weekly_total_xts)
+UK_weekly_covid_xts_normal <- (UK_weekly_covid_xts - mean(UK_weekly_covid_xts)) / sd(UK_weekly_covid_xts)
+UK_weekly_total_ts_normal <- ts(UK_weekly_total_xts_normal, start = c(2019,1), frequency = 52)
+UK_weekly_covid_ts_normal <- ts(UK_weekly_covid_xts_normal, start = c(2020,4), frequency = 52)
+df_uk <- cbind(UK_weekly_total_ts_normal, UK_weekly_covid_ts_normal)
+df_uk <- tseries::na.remove(df_uk)
+uk_flights_cases <- autoplot(df_uk) +
+  ylab("Z-Score") +
+  ggtitle("Normalized Weekly Number of Flights and Confirmed Cases in the UK") + 
+  scale_x_continuous(breaks = seq(2020, 2022, by = 1)) + 
+  scale_colour_discrete(labels = c("Flights", "Cases")) +
+  theme(text = element_text(size = 20))
+
+# png(file="us_uk_flights_cases.png", width=1000, height=600)
+grid.arrange(us_flights_cases, uk_flights_cases, nrow = 2)
+# dev.off()
+```
+
