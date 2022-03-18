@@ -7,4 +7,4 @@ Impact of COVID-19 on Worldwide Aviation - project datasets and code
 
  - To run the Rmd files, download all the (cleaned) data sets on this page and put them in the same directory as your Rmd files.
 
- - To run the Jupyter Notebook, you need to follow the instruction (at the beginning of the notebook) and download the OpenSky raw data yourself.
+ - To run the Jupyter Notebook, you need to follow the instruction (at the beginning of the notebook) and download the OpenSky raw data yourself. You will also need the files in the folder `ICAO_table`.
